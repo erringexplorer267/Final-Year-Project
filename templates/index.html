@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>CNC Live Data Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; background: #121212; color: white; margin: 0; display: flex; height: 100vh; }
+        .sidebar { width: 350px; background: #1e1e1e; padding: 20px; border-right: 1px solid #333; display: flex; flex-direction: column; gap: 20px; }
+        .main { flex-grow: 1; padding: 20px; overflow-y: auto; text-align: center; }
+        .card { background: #252525; padding: 15px; border-radius: 10px; border-bottom: 4px solid #00ff00; }
+        .value { font-size: 2.5em; color: #00ff00; font-family: monospace; }
+        img { width: 90%; border-radius: 10px; border: 2px solid #444; }
+        .chart-container { background: #252525; margin-top: 20px; padding: 15px; border-radius: 10px; height: 300px; }
+    </style>
+</head>
+<body>
+
+    <div class="sidebar">
+        <h2>CNC Monitor</h2>
+        <div class="card">
+            <label>Meter Reading</label>
+            <div id="meter-val" class="value">0</div>
+        </div>
+        <div class="card">
+            <label>Current Gain</label>
+            <div id="gain-val" class="value">0</div>
+        </div>
+        <div class="chart-container">
+            <canvas id="liveChart"></canvas>
+        </div>
+    </div>
+
+    <div class="main">
+        <h1>Vision System Feed</h1>
+        <img src="{{ url_for('video_feed') }}">
+        <p style="color: #888;">Ensure reading is inside the green box for plotting.</p>
+    </div>
+
+    <script>
+        // 1. Initialize the Chart
+        const ctx = document.getElementById('liveChart').getContext('2d');
+        const liveChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [], // Time stamps
+                datasets: [{
+                    label: 'Gain Value',
+                    data: [], // Live Gain values
+                    borderColor: '#00ff00',
+                    backgroundColor: 'rgba(0, 255, 0, 0.1)',
+                    borderWidth: 2,
+                    fill: true,
+                    tension: 0.4 // Makes the line curvy
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: { ticks: { display: false }, grid: { display: false } },
+                    y: { grid: { color: '#333' } }
+                }
+            }
+        });
+
+        // 2. Fetch data every 1 second
+        setInterval(function() {
+            fetch('/get_data')
+                .then(response => response.json())
+                .then(data => {
+                    // Update the Text
+                    document.getElementById('meter-val').innerText = data.reading;
+                    document.getElementById('gain-val').innerText = data.gain;
+
+                    // Update the Chart
+                    const now = new Date().toLocaleTimeString();
+                    
+                    // Add new data
+                    liveChart.data.labels.push(now);
+                    liveChart.data.datasets[0].data.push(data.gain);
+
+                    // Keep only the last 15 readings so it "scrolls"
+                    if(liveChart.data.labels.length > 15) {
+                        liveChart.data.labels.shift();
+                        liveChart.data.datasets[0].data.shift();
+                    }
+
+                    liveChart.update('none'); // Update without heavy animation
+                });
+        }, 1000);
+    </script>
+</body>
+</html>
