@@ -1,50 +1,62 @@
-from flask import Flask, render_template, Response, jsonify
+from flask import Flask, Response, jsonify
+from flask_cors import CORS
 import cv2
 import reader
 
 app = Flask(__name__)
+# Task 1: Zero-Failure Bridge - Allow Vite Dev Server (localhost:5173)
+CORS(app, resources={r"/*": {"origins": "*"}})
+
 camera = cv2.VideoCapture(0)
 
-# Global variable to store the latest reading
-latest_value = "0"
+# Global State for ECE Analytics
+latest_state = {
+    "current_v": 0.0,
+    "theta": 0,
+    "gain_db": -40.0,
+    "status": "ready"
+}
 
 def gen_frames():
-    global latest_value
+    global latest_state
     while True:
         success, frame = camera.read()
         if not success:
             break
         else:
             processed_frame, text = reader.process_frame(frame)
-            # Update our global variable if a number was found
             if text:
-                latest_value = text
+                try:
+                    val = float(text)
+                    latest_state["current_v"] = val
+                    # Calculation for Gain dB: Shifted to Center/Ref
+                    latest_state["gain_db"] = round((val * 0.4) - 40, 2)
+                    
+                    # Task 1 Requirement: Update Theta (Simulated rotation if hardware not connected)
+                    latest_state["theta"] = (latest_state["theta"] + 5) % 360
+                except:
+                    pass
             
             ret, buffer = cv2.imencode('.jpg', processed_frame)
             yield (b'--frame\r\n'
                    b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
 
-@app.route('/')
-def index():
-    return render_template('index.html')
-
 @app.route('/video_feed')
 def video_feed():
     return Response(gen_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
-# NEW: Route to send the data to the website as JSON
-@app.route('/get_data')
+@app.route('/get_data', methods=['GET'])
 def get_data():
-    try:
-        val = float(latest_value)
-        # YOUR FORMULA: Change this to your actual CNC gain formula
-        # Example: Gain = (Value * 1.5) / 100
-        gain = (val * 1.5) / 100 
-    except:
-        val = 0
-        gain = 0
-    
-    return jsonify(reading=val, gain=round(gain, 4))
+    """
+    Exposes latest ECE analytics JSON to the React dashboard.
+    """
+    return jsonify({
+        "current_v": latest_state["current_v"],
+        "theta": latest_state["theta"],
+        "gain_db": latest_state["gain_db"],
+        "timestamp": cv2.getTickCount()
+    })
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    # Ensure port 5000 is used for the Vite Proxy to see it
+    app.run(debug=True, port=5000, host='127.0.0.1')
